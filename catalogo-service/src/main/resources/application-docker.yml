@@ -1,0 +1,13 @@
+# Profile docker: dentro do compose os hosts são nomes de container (não localhost).
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres-catalogo:5432/catalogo
+  elasticsearch:
+    uris: http://elasticsearch:9200
+  kafka:
+    bootstrap-servers: kafka:29092
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://discovery-server:8761/eureka/

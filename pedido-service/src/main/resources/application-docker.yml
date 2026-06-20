@@ -1,0 +1,12 @@
+# Profile docker: usado junto com prod (SPRING_PROFILES_ACTIVE=prod,docker).
+# prod liga Eureka/Feign/Kafka reais; docker sobrescreve as URLs para nomes de container.
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres-pedido:5432/pedido
+  kafka:
+    bootstrap-servers: kafka:29092
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://discovery-server:8761/eureka/

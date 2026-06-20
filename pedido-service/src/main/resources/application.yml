@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: pedido-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5434/pedido
+    username: pedido
+    password: pedido
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8082
+
+# Por padrão (dev/default) o Eureka fica desligado: permite rodar o serviço isolado com o mock.
+# O profile "prod" liga o Eureka e o Feign reais (ver application-prod.yml).
+eureka:
+  client:
+    enabled: false
+
+# Observabilidade: expõe métricas em /actuator/prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+# Inclui o correlationId (via MDC) em toda linha de log
+logging:
+  pattern:
+    level: "%5p [correlationId=%X{correlationId:-}]"

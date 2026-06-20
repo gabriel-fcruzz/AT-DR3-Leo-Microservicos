@@ -1,0 +1,5 @@
+# Profile docker: dentro do compose o Eureka é alcançado pelo nome do container.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://discovery-server:8761/eureka/

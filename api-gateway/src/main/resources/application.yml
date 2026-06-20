@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: api-gateway
+
+server:
+  port: 8080
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+spring.cloud.gateway.server.webflux:
+  discovery:
+    locator:
+      enabled: true
+      lower-case-service-id: true
+  routes:
+    - id: catalogo-route
+      uri: lb://catalogo-service
+      predicates:
+        - Path=/api/catalogo/**
+      filters:
+        - StripPrefix=2
+
+    # StripPrefix=1: /api/pedidos -> /pedidos. O recurso do pedido-service já é "/pedidos",
+    # então só "/api" é prefixo de roteamento. (No catálogo são 2: "/api/catalogo".)
+    - id: pedido-route
+      uri: lb://pedido-service
+      predicates:
+        - Path=/api/pedidos/**
+      filters:
+        - StripPrefix=1

@@ -1,0 +1,5 @@
+# Profile dev: desenvolvimento isolado (Eureka off + CatalogoServiceMock).
+# Herda a configuração base do application.yml. Mantido explícito por clareza.
+eureka:
+  client:
+    enabled: false

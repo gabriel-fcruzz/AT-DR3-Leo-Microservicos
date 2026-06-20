@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: catalogo-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/catalogo
+    username: catalogo
+    password: catalogo
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  elasticsearch:
+    uris: http://localhost:9200
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: catalogo-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # Aceita o JSON do produtor e desserializa sempre na classe local (ignora o header de tipo).
+        spring.json.trusted.packages: "*"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: br.com.farmaciadelivery.catalogo_service.service.kafka.events.PedidoCriadoEvento
+
+server:
+  port: 8081
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+# Observabilidade: expõe métricas em /actuator/prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+# Inclui o correlationId (via MDC) em toda linha de log
+logging:
+  pattern:
+    level: "%5p [correlationId=%X{correlationId:-}]"

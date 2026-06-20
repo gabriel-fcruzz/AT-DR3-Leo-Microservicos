@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Tudo roda no compose: alvos pelos nomes de container.
+  - job_name: 'catalogo-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['catalogo-service:8081']
+
+  - job_name: 'pedido-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['pedido-service:8082']
