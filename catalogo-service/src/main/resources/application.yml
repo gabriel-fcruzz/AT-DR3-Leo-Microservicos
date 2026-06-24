@@ -22,6 +22,10 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
+    # Tracing do Kafka (off por padrão no Spring Boot): liga a observação no listener
+    # para o consumidor CONTINUAR o trace (lê o traceId dos headers da mensagem).
+    listener:
+      observation-enabled: true
     consumer:
       group-id: catalogo-service-group
       auto-offset-reset: earliest
@@ -50,8 +54,17 @@ management:
   endpoint:
     health:
       show-details: always
+  # Tracing (TP3): amostra 100% dos traces e exporta os spans ao Zipkin.
+  # Ao consumir o evento Kafka, o consumo CONTINUA o trace que nasceu no gateway (mesmo traceId).
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
 
-# Inclui o correlationId (via MDC) em toda linha de log
+# Log com o traceId/spanId REAIS do OpenTelemetry (via MDC, preenchidos automaticamente).
+# O traceId do OTel supera o correlationId manual: ele nasce no gateway e atravessa HTTP/Feign/Kafka.
 logging:
   pattern:
-    level: "%5p [correlationId=%X{correlationId:-}]"
+    level: "%5p [traceId=%X{traceId:-} spanId=%X{spanId:-}]"

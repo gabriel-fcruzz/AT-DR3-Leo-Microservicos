@@ -10,6 +10,26 @@ eureka:
     service-url:
       defaultZone: http://localhost:8761/eureka/
 
+# Tracing (TP3): é no gateway que o trace NASCE (toda requisição externa entra por aqui).
+# Amostra 100% e exporta os spans ao Zipkin; no profile docker o endpoint vira o nome do container.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
+
+# Log com o traceId/spanId REAIS do OpenTelemetry. Se algo falhar já no gateway,
+# o log sai com o traceId — dá para seguir a requisição inteira no Zipkin/Papertrail.
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId:-} spanId=%X{spanId:-}]"
+
 spring.cloud.gateway.server.webflux:
   discovery:
     locator:

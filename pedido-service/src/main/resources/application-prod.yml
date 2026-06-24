@@ -21,3 +21,7 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    # Tracing do Kafka (off por padrão no Spring Boot): liga a observação no KafkaTemplate
+    # para o producer PROPAGAR o traceId nos headers da mensagem até o consumidor.
+    template:
+      observation-enabled: true

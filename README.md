@@ -7,7 +7,7 @@ Sistema de delivery de farmácias baseado em microsserviços, para a disciplina 
 | Integrante | Microsserviço sob responsabilidade | Banco |
 |---|---|---|
 | **Gabriel Cruz Ferreira** | `catalogo-service` (+ infra: `discovery-server`, `api-gateway`) | PostgreSQL + Elasticsearch |
-| **Rafael Broz** | `pedido-service` | PostgreSQL |
+| **Rafael Broz** | `pedido-service` (+ observabilidade: Prometheus, Grafana) | PostgreSQL |
 
 > Entrega em dupla. Cada integrante é responsável por pelo menos 1 microsserviço, conforme exige o TP.
 
@@ -45,19 +45,23 @@ O `catalogo-service` usa **Elasticsearch** para a **busca textual** de produtos 
 
 ## Resiliência (comunicação entre serviços)
 
-| Quem chama | Quem é chamado | Risco | Estratégia |
+| Quem chama | Quem é chamado | Risco | Estratégia (TP3) |
 |---|---|---|---|
-| pedido-service | catalogo-service | catálogo lento ou fora do ar | **Timeout (Feign) + Fallback (try/catch)** |
+| pedido-service | catalogo-service | catálogo lento ou fora do ar | **Timeout (Feign) + Retry + Circuit Breaker (Resilience4j) + Fallback específico** |
 
-- **Timeout:** o Feign tem `connect-timeout`/`read-timeout` (5s) — o pedido não fica preso esperando o catálogo.
-- **Fallback:** se a chamada falha/estoura, o `CatalogoServiceImpl` captura a exceção e o pedido-service responde **503 `CATALOGO_INDISPONIVEL`** (fail-safe: não confirma pedido sem validar estoque).
-- **Como simular:** suba tudo, derrube o `catalogo-service` e crie um pedido → resposta **503**.
+A verificação de estoque (`verificarDisponibilidade`, GET idempotente) usa **Resilience4j** no `CatalogoServiceImpl`:
 
-> Não usamos Resilience4J de propósito: o TP1 aceita Timeout e Fallback, e Feign puro mantém o projeto simples e alinhado ao que foi visto em aula.
+- **Timeout:** o Feign tem `connect-timeout`/`read-timeout` (5s) — o pedido não fica preso esperando o catálogo. (Não usamos `@TimeLimiter`: ele só atua em retorno `CompletableFuture`/reativo; aqui a chamada é síncrona.)
+- **Retry:** 3 tentativas com backoff exponencial (200ms→400ms), só para falha **transitória** (`feign.RetryableException`). Seguro por ser idempotente.
+- **Circuit Breaker:** janela de 10 chamadas, abre com ≥50% de falha, fica 10s aberto (falha rápido, protege o catálogo) e testa 3 chamadas em half-open.
+- **Fallback específico:** trata separadamente **circuito aberto** (`CallNotPermittedException`) e **conexão/timeout** (`FeignException`), ambos → **503 `CATALOGO_INDISPONIVEL`**. Exceções **inesperadas sobem** (viram 500) — não engolimos bug com `catch` genérico.
+- **Como simular:** suba tudo, derrube o `catalogo-service` e crie pedidos → primeiras respostas **503** por timeout/retry; após acumular falhas, o circuito **abre** e as respostas passam a falhar rápido.
+
+> Detalhes e o porquê de cada número em [`docs/estudo/tp3-resiliencia-tracing-logs.md`](docs/estudo/tp3-resiliencia-tracing-logs.md).
 
 ## Tecnologias
 
-Java 21 · Spring Boot 4.0.6 · Spring Cloud 2025.1.2 (Eureka, Gateway WebFlux, OpenFeign) · PostgreSQL · Elasticsearch 9.0.2 · **Apache Kafka (KRaft)** · **Actuator + Micrometer + Prometheus + Grafana** · Docker Compose · Maven.
+Java 21 · Spring Boot 4.0.6 · Spring Cloud 2025.1.2 (Eureka, Gateway WebFlux, OpenFeign) · PostgreSQL · Elasticsearch 9.0.2 · **Apache Kafka (KRaft)** · **Resilience4j** (Retry + Circuit Breaker) · **Actuator + Micrometer + Prometheus + Grafana** · **Tracing: Micrometer Tracing + OpenTelemetry → Zipkin** · **Logs: Papertrail (syslog)** · Docker Compose · Maven.
 
 ## Como executar
 
@@ -65,7 +69,7 @@ Java 21 · Spring Boot 4.0.6 · Spring Cloud 2025.1.2 (Eureka, Gateway WebFlux, 
 
 ### Modo A — tudo via Docker (recomendado)
 
-Sobe **tudo** (bancos, Elasticsearch, Kafka, Prometheus, Grafana e os 4 serviços) num comando:
+Sobe **tudo** (bancos, Elasticsearch, Kafka, Prometheus, Grafana, Zipkin e os 4 serviços) num comando:
 
 ```bash
 docker compose up --build -d
@@ -78,7 +82,7 @@ Os serviços rodam com o profile `docker` (no `pedido-service`, `prod,docker`), 
 Sobe só a infraestrutura no Docker e roda os serviços na máquina:
 
 ```bash
-docker compose up -d postgres-catalogo postgres-pedido elasticsearch kafka kafka-ui prometheus grafana
+docker compose up -d postgres-catalogo postgres-pedido elasticsearch kafka kafka-ui prometheus grafana zipkin
 cd discovery-server && ./mvnw spring-boot:run    # terminal 1
 cd catalogo-service && ./mvnw spring-boot:run    # terminal 2
 cd api-gateway      && ./mvnw spring-boot:run    # terminal 3
@@ -102,6 +106,7 @@ cd pedido-service   && ./mvnw spring-boot:run -Dspring-boot.run.profiles=prod   
 | Kafka UI | 8085 |
 | Prometheus | 9090 |
 | Grafana | 3000 |
+| Zipkin | 9411 |
 
 ## Discovery Server
 
@@ -158,7 +163,7 @@ No TP1, ao confirmar o pedido, o `pedido-service` decrementava o estoque chamand
 ### Observabilidade
 
 - **Métricas:** `/actuator/prometheus` nos dois serviços; métricas de negócio `pedidos_criados_total` e `eventos_pedido_consumidos_total` (Micrometer). Prometheus coleta; Grafana visualiza.
-- **Correlação:** um `correlationId` (UUID) é gerado no pedido, viaja **dentro do evento Kafka** e entra no MDC — os logs dos dois serviços carregam o **mesmo id**.
+- **Correlação:** um `correlationId` (UUID) é gerado no pedido, viaja **dentro do evento Kafka** e entra no MDC — os logs dos dois serviços carregam o **mesmo id**. *(No TP3 este id manual foi superado pelo `traceId` real do OpenTelemetry — ver abaixo.)*
 
 ### Modelo reativo
 
@@ -179,6 +184,29 @@ docker compose up -d        # sobe bancos, ES, Kafka, kafka-ui, Prometheus, Graf
 - **Prometheus:** http://localhost:9090 (em *Status → Targets*, os dois serviços devem estar `up`).
 - **Grafana:** http://localhost:3000 (admin/admin) — adicione o Prometheus (`http://prometheus:9090`) como data source.
 - **Correlação:** procure o mesmo `correlationId` nos logs do pedido-service e do catalogo-service.
+
+## TP3 — Resiliência, Tracing e Agregação de logs
+
+Três peças novas, todas amarradas pelo **mesmo `traceId`**. O porquê de cada decisão (com marcadores 🟦 exige / 🟩 padrão / 🟨 nossa escolha) está em [`docs/estudo/tp3-resiliencia-tracing-logs.md`](docs/estudo/tp3-resiliencia-tracing-logs.md).
+
+### Resiliência — Resilience4j
+**Retry + Circuit Breaker** na chamada síncrona `pedido → catalogo` (`verificarDisponibilidade`), com fallback específico por tipo de falha. Ver a seção [Resiliência](#resiliência-comunicação-entre-serviços).
+- Config: `pedido-service/src/main/resources/application.yml` (bloco `resilience4j:`).
+- Código: `pedido-service/.../service/CatalogoServiceImpl.java` (anotações `@Retry`/`@CircuitBreaker` + fallbacks).
+
+### Tracing — Micrometer Tracing + OpenTelemetry → Zipkin
+- O trace **nasce no api-gateway** (entrada HTTP) e é **auto-instrumentado** pelo Spring; o `traceId`/`spanId` se propagam por **Feign** e **Kafka** e entram no MDC dos logs.
+- **Onde configura o tracing:** `*/application.yml` (`management.tracing.sampling` + `management.tracing.export.zipkin.endpoint`) nos 3 serviços (gateway, pedido, catálogo).
+- **Pegadinhas do Boot 4** (todas exigidas para funcionar — ver doc de estudo): a auto-config de tracing saiu do `actuator-autoconfigure`, então são **4 deps** — `spring-boot-micrometer-tracing-opentelemetry` + `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-zipkin` + **`spring-boot-zipkin`** (o transporte HTTP). A propriedade do endpoint foi renomeada para **`management.tracing.export.zipkin.endpoint`**. O Feign só propaga o trace com **`feign-micrometer`**; o Kafka só com **`spring.kafka.{template,listener}.observation-enabled: true`**.
+- **Zipkin:** http://localhost:9411 — busque por um `traceId` para ver a requisição inteira (gateway → pedido → Feign/Kafka → catálogo).
+
+### Agregação de logs — Papertrail
+- **Arquivo que exporta os logs:** `*/src/main/resources/logback-spring.xml` (appender `PAPERTRAIL`, um por serviço). Ativo só em `prod`/`docker`.
+- Destino configurável por env vars **`PAPERTRAIL_HOST`/`PAPERTRAIL_PORT`** (default inofensivo `localhost:1514` para não derrubar a app sem Papertrail). Não precisa de conta ativa para a config existir.
+- Como cada linha já carrega o `traceId`, no Papertrail basta buscar por um `traceId` para ver **todos** os serviços daquela requisição.
+
+### Verificação (e2e completo, com Zipkin no ar)
+Validado de ponta a ponta: um `POST /api/pedidos` gera um **único trace de 7 spans** no Zipkin atravessando gateway → pedido → Feign → catálogo → Kafka; o **mesmo `traceId`** aparece nos logs dos dois serviços; e a resiliência percorre o ciclo **`closed → open → half_open → closed`** ao derrubar/religar o catálogo (respostas 503 → 201). Passo a passo e descobertas em [`docs/estudo/tp3-resiliencia-tracing-logs.md`](docs/estudo/tp3-resiliencia-tracing-logs.md).
 
 ## Convenção de commits
 

@@ -35,8 +35,45 @@ management:
   endpoint:
     health:
       show-details: always
+  # Tracing (TP3): amostra 100% dos traces (ambiente de aula) e exporta os spans ao Zipkin.
+  # O endpoint é sobrescrito para o nome do container no profile docker.
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
 
-# Inclui o correlationId (via MDC) em toda linha de log
+# Resiliência (Resilience4j) da chamada SÍNCRONA pedido -> catalogo (verificarDisponibilidade).
+# Só tem efeito onde as anotações existem: CatalogoServiceImpl (@Profile prod). O Mock não usa.
+# Números escolhidos para serem explicáveis (ver docs/estudo/tp3-resiliencia-tracing-logs.md).
+resilience4j:
+  retry:
+    instances:
+      catalogo:
+        max-attempts: 3                 # 1 tentativa + 2 reenvios
+        wait-duration: 200ms            # espera inicial entre tentativas
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2   # 200ms -> 400ms (não martela o catálogo)
+        # Só reenvia falha TRANSITÓRIA (conexão/timeout do Feign). Não reenvia em circuito
+        # aberto (CallNotPermittedException) nem em erro de negócio.
+        retry-exceptions:
+          - feign.RetryableException
+  circuitbreaker:
+    instances:
+      catalogo:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10                       # avalia as últimas 10 chamadas
+        minimum-number-of-calls: 5                    # só decide após 5 chamadas (evita abrir cedo demais)
+        failure-rate-threshold: 50                    # >=50% de falha -> abre
+        wait-duration-in-open-state: 10s              # fica 10s aberto (falha rápida, protege o catálogo)
+        permitted-number-of-calls-in-half-open-state: 3   # half-open: deixa 3 chamadas de teste
+        # O que conta como falha do circuito (FeignException cobre RetryableException, que é subclasse).
+        record-exceptions:
+          - feign.FeignException
+
+# Log com o traceId/spanId REAIS do OpenTelemetry (via MDC, preenchidos automaticamente).
+# O traceId do OTel supera o correlationId manual: ele nasce no gateway e atravessa HTTP/Feign/Kafka.
 logging:
   pattern:
-    level: "%5p [correlationId=%X{correlationId:-}]"
+    level: "%5p [traceId=%X{traceId:-} spanId=%X{spanId:-}]"

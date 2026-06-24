@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ===========================================================================
+  ESTE ARQUIVO É O QUE EXPORTA OS LOGS PARA O PAPERTRAIL (agregação de logs).
+  ===========================================================================
+  Caminho: log da aplicação  ->  SyslogAppender (este arquivo)  ->  Papertrail
+           ->  busca por traceId mostra a requisição inteira em TODOS os serviços.
+
+  Os logs já carregam traceId/spanId (preenchidos automaticamente pelo
+  OpenTelemetry no MDC — ver tracing no application.yml). Por isso, ao chegarem
+  no Papertrail, basta buscar por um traceId para reconstituir o fluxo
+  gateway -> pedido -> (Kafka) -> catalogo.
+
+  >>> PARA ENVIAR DE VERDADE <<< defina as variáveis de ambiente com o SEU destino
+  do Papertrail (Papertrail > Settings > Log Destinations), por exemplo:
+      PAPERTRAIL_HOST=logs5.papertrailapp.com
+      PAPERTRAIL_PORT=51234
+  Sem elas, o appender aponta para localhost:1514 (inofensivo) — assim a app NÃO
+  cai quando o Papertrail não está configurado, mas a fiação continua real.
+
+  O appender só é ativado nos profiles prod/docker (onde se "envia" os logs).
+  Em dev/default fica só o console — verificação local do traceId continua limpa.
+
+  Para TLS (recomendado pelo Papertrail em produção, em vez de UDP), trocaria-se
+  por com.papertrailapp:logback-syslog4j.
+-->
+<configuration>
+    <!-- Console padrão do Spring Boot (respeita logging.pattern.level do application.yml). -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- Identifica o serviço de origem dentro da mensagem enviada ao Papertrail. -->
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="app"/>
+
+    <!-- Envia logs ao Papertrail apenas quando "em produção" (prod ou docker). -->
+    <springProfile name="prod | docker">
+        <appender name="PAPERTRAIL" class="ch.qos.logback.classic.net.SyslogAppender">
+            <!-- Default inofensivo localhost:1514; sobrescreva com PAPERTRAIL_HOST/PAPERTRAIL_PORT. -->
+            <syslogHost>${PAPERTRAIL_HOST:-localhost}</syslogHost>
+            <port>${PAPERTRAIL_PORT:-1514}</port>
+            <facility>USER</facility>
+            <!-- traceId/spanId vão na mensagem: é o que permite buscar a requisição inteira no Papertrail. -->
+            <suffixPattern>${appName} %logger{0} [traceId=%X{traceId:-} spanId=%X{spanId:-}] %msg</suffixPattern>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="PAPERTRAIL"/>
+        </root>
+    </springProfile>
+
+    <!-- Dev/default: só console (sem syslog). -->
+    <springProfile name="!prod &amp; !docker">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+</configuration>

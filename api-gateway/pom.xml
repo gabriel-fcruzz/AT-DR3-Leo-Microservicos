@@ -40,6 +40,36 @@
 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
 		</dependency>
 
+		<!-- Actuator: traz a auto-configuração de tracing (management.tracing.*) e o /actuator. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<!-- Tracing distribuído (Spring Boot 4): auto-configuração OpenTelemetry -> Zipkin.
+		     No Boot 4 a auto-config de tracing saiu do actuator-autoconfigure e virou módulo próprio.
+		     Puxa transitivamente spring-boot-micrometer-tracing + spring-boot-opentelemetry e traz a
+		     ligação OTel -> Zipkin. É AQUI, no gateway, que o trace nasce (entrada HTTP externa). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-opentelemetry</artifactId>
+		</dependency>
+		<!-- Ponte Micrometer Tracing -> API do OpenTelemetry; traceId/spanId vão para o MDC. -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-tracing-bridge-otel</artifactId>
+		</dependency>
+		<!-- Exporter de spans do OpenTelemetry para o formato Zipkin (a classe ZipkinSpanExporter). -->
+		<dependency>
+			<groupId>io.opentelemetry</groupId>
+			<artifactId>opentelemetry-exporter-zipkin</artifactId>
+		</dependency>
+		<!-- Transporte: fornece o BytesMessageSender HTTP que o exporter usa para enviar ao Zipkin
+		     (lê management.zipkin.tracing.endpoint). Sem ele os spans não chegam ao Zipkin. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-zipkin</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

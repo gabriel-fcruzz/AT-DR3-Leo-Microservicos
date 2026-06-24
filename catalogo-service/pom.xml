@@ -65,6 +65,33 @@
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
+		<!-- Tracing distribuído (Spring Boot 4): auto-configuração OpenTelemetry -> Zipkin.
+		     No Boot 4 a auto-config de tracing saiu do actuator-autoconfigure e virou módulo próprio.
+		     Este módulo puxa transitivamente spring-boot-micrometer-tracing (correlação no MDC) e
+		     spring-boot-opentelemetry (SDK), e traz a ZipkinWithOpenTelemetryTracingAutoConfiguration
+		     (a ligação OTel -> Zipkin). Sem ele o tracer cai em no-op e o traceId não chega ao MDC. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-opentelemetry</artifactId>
+		</dependency>
+		<!-- Ponte Micrometer Tracing -> API do OpenTelemetry.
+		     Auto-instrumenta entrada HTTP e o consumo Kafka; põe traceId/spanId no MDC. -->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-tracing-bridge-otel</artifactId>
+		</dependency>
+		<!-- Exporter de spans do OpenTelemetry para o formato Zipkin (a classe ZipkinSpanExporter). -->
+		<dependency>
+			<groupId>io.opentelemetry</groupId>
+			<artifactId>opentelemetry-exporter-zipkin</artifactId>
+		</dependency>
+		<!-- Transporte: fornece o BytesMessageSender HTTP que o exporter usa para enviar ao Zipkin
+		     (lê management.zipkin.tracing.endpoint). Sem este módulo o exporter não é criado e
+		     os spans NÃO chegam ao Zipkin (o traceId continua nos logs, mas nada aparece na UI). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-zipkin</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.postgresql</groupId>
